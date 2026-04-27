@@ -1,29 +1,50 @@
-# AI Role-Based Document Retrieval Backend
+# IntraDoc Intelligence — AI-Powered Document Retrieval System
 
-A production-ready Django REST Framework backend for AI-powered document retrieval
-with role-based access control, FAISS vector search, and Ollama/Mistral LLM integration.
+An enterprise-grade, role-based document intelligence platform powered by Django, FAISS vector search, Groq LLM (LLaMA 3.1), Firebase Analytics, and a modern React SPA frontend.
 
 ---
 
 ## Architecture
 
 ```
-User → JWT Auth → RBAC Check → FAISS Vector Search → RAG Prompt → Ollama/Mistral → Response
+User → Firebase Auth → JWT Auth → RBAC Check → FAISS Vector Search → RAG Prompt → Groq API → Structured Response
+                                                                                      ↓
+                                                                              Firebase Firestore
+                                                                              (Chat History + Analytics)
 ```
 
 ## Tech Stack
 
-| Layer       | Technology                          |
-|------------|-------------------------------------|
-| Backend    | Django 4.2 + Django REST Framework  |
-| Auth       | JWT (SimpleJWT) + bcrypt            |
-| LLM        | Ollama (Mistral)                    |
-| Vector DB  | FAISS                              |
-| Database   | SQLite (dev) / PostgreSQL (prod)    |
+| Layer          | Technology                            |
+|---------------|---------------------------------------|
+| Backend       | Django 4.2 + Django REST Framework    |
+| Auth          | JWT (SimpleJWT) + Firebase Auth       |
+| LLM           | Groq API (`llama-3.1-8b-instant`)     |
+| Embeddings    | SentenceTransformers (`all-MiniLM-L6-v2`) |
+| Vector DB     | FAISS (Facebook AI Similarity Search) |
+| Database      | SQLite (dev) / PostgreSQL (prod)      |
+| Frontend      | React 18 + Vite + Recharts           |
+| Analytics     | Firebase Firestore + Google Analytics |
+| Streaming     | `application/x-ndjson` (NDJSON)       |
+
+## Key Features
+
+- 🔐 **Role-Based Access Control (RBAC)** — Admin, HR, Accounts, Legal roles with strict department scoping
+- 📄 **PDF Document Upload & Chunking** — Automatic text extraction, chunking, and FAISS indexing
+- 🔍 **Semantic Vector Search** — FAISS-powered similarity search with configurable top-k retrieval
+- 🤖 **Advanced RAG Pipeline** — 6-step retrieval-based QA with evidence citation, confidence scoring, and hallucination prevention
+- 📊 **Real-Time Admin Dashboard** — Token usage, response latency, knowledge gaps, query timeline, and document inventory
+- 💬 **Persistent Chat History** — Firebase Firestore per-department conversation storage
+- 🔄 **Conversation Memory** — Query expansion using recent chat context for follow-up questions
+- 📈 **Performance Benchmarking** — Accurate retrieval time + LLM generation time metrics
+- 🌐 **Graph Mode** — Cross-department unified knowledge queries (Admin only)
+- 💡 **Smart Suggestions** — Auto-generated follow-up question chips after every response
+
+---
 
 ## Quick Start
 
-### 1. Setup
+### 1. Backend Setup
 
 ```bash
 # Clone and enter project
@@ -38,7 +59,7 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your settings
+# Edit .env with your GROQ_API_KEY
 
 # Run migrations
 python manage.py migrate
@@ -46,89 +67,163 @@ python manage.py migrate
 # Seed test users
 python manage.py seed_users
 
-# Start server
+# Start backend server
 python manage.py runserver
 ```
 
-### 2. Start Ollama
+### 2. Frontend Setup
 
 ```bash
-ollama serve          # Start Ollama server
-ollama pull mistral   # Download Mistral model
+cd frontend
+npm install
+npm run dev
 ```
 
-### 3. Test Users
+### 3. Environment Variables
 
-| Username       | Password        | Role     |
-|---------------|-----------------|----------|
-| admin         | admin1234       | ADMIN    |
-| hr_user       | hrpass1234      | HR       |
-| accounts_user | accpass1234     | ACCOUNTS |
-| legal_user    | legalpass1234   | LEGAL    |
+**Backend (`.env`)**:
+```bash
+GROQ_API_KEY=your_groq_api_key_here
+LLM_MODEL=llama-3.1-8b-instant
+SECRET_KEY=your_django_secret_key
+DEBUG=True
+```
+
+**Frontend (`frontend/.env`)**:
+```bash
+VITE_API_BASE_URL=http://localhost:8000
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+VITE_FIREBASE_APP_ID=your_app_id
+```
+
+### 4. Test Users
+
+| Username       | Password        | Role     | Departments     |
+|---------------|-----------------|----------|-----------------|
+| admin         | admin1234       | ADMIN    | All             |
+| hr_user       | hrpass1234      | HR       | HR              |
+| accounts_user | accpass1234     | ACCOUNTS | Accounts/Finance|
+| legal_user    | legalpass1234   | LEGAL    | Legal           |
+
+---
 
 ## API Endpoints
 
 ### Authentication
 
 ```bash
-# Register
-POST /api/auth/register/
-{"username": "newuser", "password": "password123", "role": "HR"}
-
-# Login
-POST /api/auth/login/
-{"username": "hr_user", "password": "hrpass1234"}
-
-# Profile
-GET /api/auth/profile/
-Authorization: Bearer <token>
-
-# Refresh Token
-POST /api/auth/token/refresh/
-{"refresh": "<refresh_token>"}
+POST /api/auth/register/     # Register new user
+POST /api/auth/login/        # Login → JWT tokens
+GET  /api/auth/profile/      # Get user profile (Bearer token)
+POST /api/auth/token/refresh/ # Refresh JWT token
 ```
 
 ### Documents
 
 ```bash
-# Upload PDF
-POST /api/documents/upload/
-Content-Type: multipart/form-data
-file: <pdf_file>
-department: hr
-
-# List documents
-GET /api/documents/
-
-# Document stats
-GET /api/documents/stats/
+POST /api/documents/upload/   # Upload PDF (multipart/form-data)
+GET  /api/documents/          # List documents (RBAC-scoped)
+GET  /api/documents/stats/    # Document statistics
 ```
 
-### Chat (RAG)
+### Chat (RAG Pipeline)
 
 ```bash
-# Ask a question
-POST /api/chat/
-{"query": "What is the leave policy?"}
-
-# Chat history
-GET /api/chat/history/
+POST /api/chat/              # Query documents (JSON or NDJSON streaming)
+GET  /api/chat/history/      # Chat history for authenticated user
 ```
 
-### Health Check
+### Health
 
 ```bash
-GET /api/health/    # No auth required
+GET  /api/health/            # System health check (no auth required)
 ```
+
+---
+
+## RAG Pipeline — Prompt Engineering
+
+The system uses a **6-step retrieval-based QA** approach with strict grounding rules:
+
+1. **Answerability Check** — Determines if the question is answerable from the retrieved context
+2. **Relevance Filtering** — Uses only directly relevant chunks
+3. **Strict Answer Rules** — No outside knowledge, no inference, no generalization
+4. **Structured Output** — Key Points → Evidence (with real filenames) → Confidence (High/Medium/Low)
+5. **Evidence Integrity** — Only real document filenames, exact quotes, no "Excerpt 1" labels
+6. **Special Cases** — NOT FOUND handling, document listing, "who is" questions
+
+### Response Format
+
+```
+Key Points:
+* Nikhil Gupta's base salary is ₹50,000 per month
+* Annual CTC is ₹8,40,000
+
+Evidence:
+* "Base Salary: ₹50,000/month" (Source: FINANCE_DOCUMENT_NIKHIL.pdf)
+
+Confidence:
+High
+```
+
+---
 
 ## RBAC Rules
 
-| Role     | Access                        |
-|----------|-------------------------------|
-| ADMIN    | All documents, all departments |
-| HR       | HR documents only             |
-| ACCOUNTS | Accounts documents only       |
-| LEGAL    | Legal documents only          |
+| Role     | Access                         |
+|----------|--------------------------------|
+| ADMIN    | All documents, all departments, Graph mode |
+| HR       | HR documents only              |
+| ACCOUNTS | Accounts/Finance documents only|
+| LEGAL    | Legal documents only           |
+
+---
+
+## Admin Dashboard
+
+The dashboard (Admin only) provides:
+
+- **Total Tokens Processed** — Estimated token usage across all queries
+- **Avg. Response Time** — Mean retrieval + LLM generation latency
+- **Knowledge Gaps** — Queries that couldn't be answered from available documents
+- **Document Inventory** — Full table with filename, department, contributor, indexing status
+- **Query Timeline** — Area chart of query volume over time
+- **Latency Benchmarks** — Retrieval vs LLM generation time breakdown
+- **Live Activity Feed** — Recent queries with response times
+- **System Status** — RAG Engine + Groq LLM health indicators
+
+---
+
+## Project Structure
+
+```
+IntraDoc_AI/
+├── core/              # Django settings & root URLs
+├── users/             # User model, auth, RBAC permissions
+├── documents/         # Document upload & PDF processing
+├── chat/              # Chat API, history, admin logging
+├── ai/                # AI/ML pipeline
+│   ├── llm.py         # Groq API integration with health checks
+│   ├── rag.py         # RAG orchestration with 6-step prompt
+│   ├── vector.py      # FAISS vector store management
+│   └── embeddings.py  # SentenceTransformer embeddings
+├── frontend/          # React SPA
+│   ├── src/pages/     # QueryPage, DashboardPage, LoginPage, etc.
+│   ├── src/services/  # API client & RAG service
+│   ├── src/firebase.js # Firebase Auth, Firestore, Analytics
+│   └── src/context/   # AuthContext (JWT + Firebase)
+├── tests/             # Test suite (31+ tests)
+├── docs/              # Step-by-step development summaries
+├── ARCHITECTURE.md    # System design documentation
+├── PRESENTATION_GUIDE.md # Demo script & business case
+└── rag_architecture_summary.md # RAG pipeline technical reference
+```
+
+---
 
 ## Running Tests
 
@@ -138,79 +233,17 @@ python manage.py test tests.test_api -v 2
 
 **31 tests** covering authentication, RBAC, document upload, vector store, chat API, and health check.
 
-## Project Structure
+---
 
-```
-IntraDoc_AI/
-├── core/          # Django settings & root URLs
-├── users/         # User model, auth, RBAC permissions
-├── documents/     # Document upload & PDF processing
-├── chat/          # Chat API & history
-├── ai/            # LLM, FAISS, RAG pipeline
-│   ├── llm.py     # Ollama/Mistral integration
-│   ├── rag.py     # RAG orchestration
-│   └── vector.py  # FAISS vector store
-├── tests/         # Test suite
-└── docs/          # Step-by-step summaries
-```
-
-## 📚 Complete Documentation
-
-All comprehensive step-by-step guides and architecture documentation are in the `/docs` folder:
-
-### Quick Navigation
-
-**For Project Managers/Leaders**
-- Start: [PRESENTATION_GUIDE.md](./PRESENTATION_GUIDE.md) — 30-second overview + demo script
-
-**For Developers (Full Stack)**
-- Start: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — System design overview
-- Then: [docs/INDEX.md](./docs/INDEX.md) — Complete learning path
-
-**For DevOps/Infrastructure**
-- Read: [docs/step-17-summary.md](./docs/step-17-summary.md) — Production deployment
-
-**For QA/Testing**
-- Read: [docs/step-18-summary.md](./docs/step-18-summary.md) — Test suite & QA
-
-### Complete Documentation Index
+## 📚 Documentation
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
-| **ARCHITECTURE.md** | System design, data flows, deployment | Architects, Leads |
+| **ARCHITECTURE.md** | System design, data flows | Architects, Leads |
 | **PRESENTATION_GUIDE.md** | Live demo script, business case | Managers, Presenters |
-| **docs/INDEX.md** | Learning paths by role | All teams |
-| **docs/step-1-summary.md** | Database models | Developers |
-| **docs/step-2-summary.md** | RBAC system | Developers |
-| **docs/step-3-summary.md** | Document management | Developers |
-| **docs/step-4-summary.md** | Vector embeddings & FAISS | ML/Developers |
-| **docs/step-5-summary.md** | RAG pipeline | Developers |
-| **docs/step-6-summary.md** | Chat interface | Developers |
-| **docs/step-7-summary.md** | Authentication & security | Developers |
-| **docs/step-8-summary.md** | Testing framework | QA/Developers |
-| **docs/step-9-summary.md** | Performance optimization | DevOps |
-| **docs/step-10-summary.md** | Error handling & logging | Developers |
-| **docs/step-11-summary.md** | LLM integration (Groq) | ML/Developers |
-| **docs/step-12-summary.md** | Frontend-backend integration | Frontend |
-| **docs/step-13-summary.md** | Clean coding standards | All developers |
-| **docs/step-14-summary.md** | Frontend UI/UX | Frontend/Designers |
-| **docs/step-15-summary.md** | Query sharing routes | All |
-| **docs/step-16-summary.md** | Complete API reference | Developers/Integrators |
-| **docs/step-17-summary.md** | Production deployment | DevOps |
-| **docs/step-18-summary.md** | Testing & QA | QA/Developers |
-
-### Key Features Documented
-
-- ✅ **Role-Based Access Control** — Full RBAC with 5 roles
-- ✅ **Document Upload & Storage** — PDF processing with chunking
-- ✅ **Vector Search** — FAISS semantic similarity
-- ✅ **RAG Pipeline** — Question answering with context
-- ✅ **LLM Integration** — Groq API (free, fast, reliable)
-- ✅ **Authentication** — JWT token-based auth
-- ✅ **Frontend** — Modern single-page application
-- ✅ **API Routes** — Shareable query links (/query/hr/, /query/legal/, etc.)
-- ✅ **Testing** — 31+ comprehensive tests
-- ✅ **Production** — Deployment guide with Docker & Nginx
+| **rag_architecture_summary.md** | RAG pipeline deep-dive | ML Engineers |
+| **docs/INDEX.md** | Complete learning path | All teams |
+| **docs/step-1 to step-18** | Step-by-step build guides | Developers |
 
 ---
 

@@ -16,7 +16,7 @@ Orchestrates the full flow:
     4. Retrieve relevant chunks from FAISS
     5. Deduplicate and filter chunks by quality
     6. Build a context-aware prompt with conversation memory
-    7. Send to Ollama for response generation
+    7. Send to Groq for response generation
 """
 
 import logging
@@ -24,13 +24,13 @@ import re
 
 from users.permissions import get_accessible_departments
 from .vector import get_vector_store
-from .llm import generate_response, OllamaError
+from .llm import generate_response, LLMError
 
 logger = logging.getLogger(__name__)
 
 # Maximum conversation turns to include for context
 MAX_MEMORY_TURNS = 3
-MAX_BULLETS = 6
+MAX_BULLETS = 5
 
 # System prompt template
 SYSTEM_PROMPT = """You are an intelligent document assistant for an internal enterprise system called "IntraDoc Intelligence".
@@ -83,25 +83,110 @@ Your behavior must strictly follow role-based access control, department-based d
 ---
 
 ## 📌 RESPONSE STYLE
-* **MANDATORY SUGGESTIONS**: At the very end of every response, you MUST provide exactly 3 relevant follow-up questions for the user. Format them on a single line exactly like this: `[[Suggestions: Question 1? | Question 2? | Question 3?]]`
-* Be concise and factual. Present as a complete profile in Graph mode.
-* Do not include irrelevant information.
-* Maximum {max_bullets} bullet points if formatting as a list.
+* Be concise and factual. Prioritize the most important insights.
+* Do NOT reveal internal reasoning or steps.
+* Use clean formatting with simple section titles (Key Points, Evidence, Confidence).
+* Maximum {max_bullets} bullet points.
 """
 
 # User message template — question FIRST so the model focuses on it
-USER_PROMPT = """Question: {query}
+USER_PROMPT = """You are a retrieval-based question answering assistant.
+
+Answer the user's question using ONLY the provided context.
+
+User question:
+"{query}"
 
 {memory_section}
-Below is reference material. Your task:
-1. Find the information that answers the question
-2. Summarize it in ENGLISH ONLY - do not use any other language
-3. If documents contain non-English text, translate it to English
-4. Be concise and factual
-
+Below is the reference material:
 {context}
 
-CRITICAL: Always respond in ENGLISH. No exceptions."""
+---
+
+GENERAL RULES
+* Do NOT use outside knowledge.
+* Do NOT guess or assume missing information.
+* Do NOT infer beyond what is explicitly stated.
+* If the answer is not clearly present, respond exactly:
+  "I don't have enough information from the provided documents."
+
+---
+
+RELEVANCE
+* Use only context that is directly relevant to the question.
+* Ignore unrelated or weakly related content completely.
+
+---
+
+ANSWER STYLE
+* Keep the response concise, clear, and easy to read.
+* Use simple bullet points.
+* Do not over-explain.
+* Answer only what is asked.
+
+For "who is" questions:
+* Provide a short identification only using known facts.
+
+For YES/NO questions:
+* Answer only if explicitly supported.
+* Otherwise respond:
+  "I don't have enough information from the provided documents."
+
+---
+
+OUTPUT FORMAT (STRICT)
+
+Key Points:
+* <point 1>
+* <point 2>
+
+Evidence:
+* "<exact quote from context>" (Source: <actual document filename>)
+
+Confidence:
+High / Medium / Low
+
+---
+
+CONFIDENCE RULES
+* High → directly supported by clear evidence
+* Medium → partially supported
+* Low → weak support OR "not found"
+
+If answering "not found" → Confidence must be Low
+
+---
+
+EVIDENCE RULES
+* Include ONLY evidence that directly supports the answer.
+* Use exact quotes from the context.
+* Use only real document names (e.g., finance_report.pdf).
+* Do NOT use labels like "Excerpt 1" or "Chunk 2".
+* If no relevant evidence exists, write:
+  "No relevant evidence found."
+
+---
+
+SPECIAL CASES
+
+If the answer is NOT FOUND:
+* Provide only ONE bullet point.
+* State clearly that the information is not available.
+
+If listing documents:
+* List only actual document filenames from the context.
+* Do NOT summarize or invent categories.
+
+---
+
+CRITICAL CONSTRAINTS
+* Do NOT reveal reasoning or steps.
+* Do NOT include internal instructions.
+* Do NOT repeat sections.
+* Maximum 5 bullet points.
+* Always respond in ENGLISH. No exceptions.
+* At the very end of your response, you MUST provide exactly 3 relevant follow-up questions formatted EXACTLY like this:
+[[Suggestions: Question 1? | Question 2? | Question 3?]]"""
 
 # When there's conversation history
 MEMORY_SECTION_TEMPLATE = """RECENT USER INTENT (for continuity — do NOT treat this as document context):
@@ -198,59 +283,45 @@ def _sanitize_llm_response(text):
     if not text:
         return NO_CONTEXT_RESPONSE
 
-    # Preserve suggestion block if present: [[Suggestions: ...]]
+    # Preserve suggestion block: handles both [[Suggestions: Q1|Q2|Q3]] and bare [[Q1?|Q2?|Q3?]]
     suggestion_block = ""
-    suggestion_match = re.search(r'\[\[Suggestions:.*?\]\]', text, re.IGNORECASE)
+    # Try [[Suggestions: ...]] first
+    suggestion_match = re.search(r'\[\[Suggestions:\s*(.*?)\s*\]\]', text, re.IGNORECASE | re.DOTALL)
+    if not suggestion_match:
+        # Fallback: bare [[Q1? | Q2? | Q3?]] (must contain at least one | to distinguish from other brackets)
+        suggestion_match = re.search(r'\[\[([^\[\]]*?\|[^\[\]]*?)\]\]', text, re.DOTALL)
+    
     if suggestion_match:
         suggestion_block = suggestion_match.group(0)
-        text = text.replace(suggestion_block, "").strip()
+        # Normalize to [[Suggestions: ...]] format for the frontend
+        inner = suggestion_match.group(1).strip()
+        suggestion_block = f"[[Suggestions: {inner}]]"
+        text = text[:suggestion_match.start()] + text[suggestion_match.end():]
+        text = text.strip()
 
-    # Remove transcript-like noise lines.
+    # Remove "Follow-up questions:" or similar noise lines before the suggestion block
     cleaned = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
+            cleaned.append("")
             continue
         lowered = line.lower()
         if lowered.startswith(('user:', 'assistant:', 'question:', 'context:')):
             continue
         if lowered in {"here's what i found", "here's what i found:"}:
             continue
-        cleaned.append(line)
-
-    # Extract bullets if present; otherwise split into sentence-like chunks.
-    bullet_items = []
-    for line in cleaned:
-        line = re.sub(r'^\s*[-*•]\s*', '', line).strip()
-        line = re.sub(r'^\d+[.)]\s*', '', line).strip()
-        if not line:
+        # Strip "Follow-up questions:" noise
+        if re.match(r'^follow[\s-]*up\s+questions?\s*:?\s*$', lowered):
             continue
-        bullet_items.append(line)
+        cleaned.append(raw) # Keep original line with leading spaces if any
 
-    if not bullet_items:
-        sentence_candidates = re.split(r'(?<=[.!?])\s+', text.strip())
-        bullet_items = [s.strip() for s in sentence_candidates if s.strip()]
-
-    # Deduplicate and cap.
-    unique_items = []
-    seen = set()
-    for item in bullet_items:
-        key = re.sub(r'\s+', ' ', item).strip().lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        unique_items.append(item.rstrip('. '))
-        if len(unique_items) >= MAX_BULLETS:
-            break
-
-    if not unique_items:
+    if not cleaned:
         return NO_CONTEXT_RESPONSE
 
-    response_lines = ["Here's what I found:", ""]
-    response_lines.extend(f"- {item}" for item in unique_items)
+    final_response = "\n".join(cleaned).strip()
     
     # Append the suggestion block back at the very end
-    final_response = "\n".join(response_lines)
     if suggestion_block:
         final_response += f"\n\n{suggestion_block}"
         
@@ -282,7 +353,7 @@ def get_relevant_chunks(query, user, search_departments, top_k=5):
 
 def build_messages(query, chunks, user_role, requested_department, memory_section=""):
     """
-    Build a structured messages array for the OpenAI/Groq API.
+    Build a structured messages array for the Groq API.
     """
     if not chunks:
         return None
@@ -419,7 +490,7 @@ def process_query(query, user, requested_department="", history=None):
             }
         }
 
-    except OllamaError as e:
+    except LLMError as e:
         error_msg = str(e)
         logger.error(f"RAG pipeline LLM error: {error_msg}")
 

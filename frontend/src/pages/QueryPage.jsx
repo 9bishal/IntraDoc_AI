@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import AppLayout from '../components/AppLayout';
 import MessageBubble from '../components/MessageBubble';
@@ -11,21 +11,7 @@ import { trackEvent, getChatHistory, appendChatHistory } from '../firebase';
 function toBulletText(raw) {
   const text = (raw || '').toString().trim();
   if (!text) return '- No response received.';
-
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/^here'?s what i found:?$/i.test(line));
-
-  if (!lines.length) return '- No response received.';
-
-  const bullets = lines.map((line) => {
-    const normalized = line.replace(/^[-*•\d.)\s]+/, '').trim();
-    return `- ${normalized}`;
-  });
-
-  return bullets.slice(0, 8).join('\n');
+  return text;
 }
 
 export default function QueryPage() {
@@ -38,6 +24,25 @@ export default function QueryPage() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([]);
+
+  const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleScroll = () => {
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    setShowScrollButton(!isNearBottom);
+  };
 
   const departments = useMemo(() => backendUser?.departments || [], [backendUser]);
 
@@ -127,13 +132,19 @@ export default function QueryPage() {
         response?.message ||
         'No response content.';
 
-      // Parse suggestions if present: [[Suggestions: Q1 | Q2 | Q3]]
+      // Parse suggestions: handles [[Suggestions: Q1 | Q2 | Q3]] and bare [[Q1? | Q2? | Q3?]]
       let suggestions = [];
-      const suggestionMatch = responseText.match(/\[\[Suggestions:\s*(.*?)\s*\]\]/i);
+      let suggestionMatch = responseText.match(/\[\[Suggestions:\s*([\s\S]*?)\s*\]\]/i);
+      if (!suggestionMatch) {
+        // Fallback: bare [[Q1? | Q2? | Q3?]] (must contain | to be suggestions)
+        suggestionMatch = responseText.match(/\[\[([^\[\]]*?\|[^\[\]]*?)\]\]/);
+      }
       if (suggestionMatch) {
         suggestions = suggestionMatch[1].split('|').map(s => s.trim()).filter(Boolean);
-        responseText = responseText.replace(/\[\[Suggestions:.*?\]\]/i, '').trim();
+        responseText = responseText.replace(suggestionMatch[0], '').trim();
       }
+      // Strip "Follow-up questions:" noise line
+      responseText = responseText.replace(/follow[\s-]*up\s+questions?\s*:?\s*$/im, '').trim();
 
       const normalized = toBulletText(responseText);
       const sources = response?.sources || [];
@@ -188,7 +199,7 @@ export default function QueryPage() {
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-12rem)] flex-col rounded-xl border border-border bg-white">
+      <div className="flex h-[calc(100vh-12rem)] flex-col rounded-xl border border-border bg-white relative">
         <div className="border-b border-border px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-sm font-semibold">Document Query</h1>
@@ -204,7 +215,11 @@ export default function QueryPage() {
           </div>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div 
+          className="flex-1 space-y-3 overflow-y-auto p-4"
+          ref={chatContainerRef}
+          onScroll={handleScroll}
+        >
           {messages.map((message) => (
             <MessageBubble 
               key={message.id} 
@@ -216,7 +231,20 @@ export default function QueryPage() {
               isGraph={message.isGraph}
             />
           ))}
+          <div ref={messagesEndRef} />
         </div>
+
+        {showScrollButton && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-24 right-8 p-3 bg-black text-white rounded-full shadow-xl hover:bg-gray-800 transition-all hover:scale-110 z-50 flex items-center justify-center animate-in fade-in zoom-in duration-200"
+            title="Scroll to latest message"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14M19 12l-7 7-7-7" />
+            </svg>
+          </button>
+        )}
 
         <form onSubmit={handleSubmit} className="border-t border-border p-4">
           <div className="flex gap-2">

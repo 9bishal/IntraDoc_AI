@@ -106,7 +106,7 @@ System Rules → Role declaration → Memory section (optional) → Document con
 
 ---
 
-## 5. LLM Configuration (Ollama/Mistral)
+## 5. LLM Configuration (Groq API)
 
 | Parameter                  | Before                     | After                          | Rationale                                         |
 | -------------------------- | -------------------------- | ------------------------------ | ------------------------------------------------- |
@@ -197,7 +197,7 @@ PDF Upload → PyPDF extract → Clean text → Chunk (800/150) → Embed (BM25 
 | Notifications | `alert()` dialogs    | Toast notifications (success/error/info)            |
 | File Upload   | Basic file input     | Drag-and-drop zone with visual feedback             |
 | Suggestions   | None                 | Clickable suggestion chips                          |
-| System Status | None                 | Live status indicator (Ollama health + cache stats) |
+| System Status | None                 | Live status indicator (Groq health + cache stats) |
 | Metadata      | Post-response text   | Styled chunk-info badges                            |
 | Avatars       | None                 | User/AI avatar circles with initials                |
 | Animations    | None                 | Message slide-in, hover effects, pulse indicators   |
@@ -212,7 +212,7 @@ PDF Upload → PyPDF extract → Clean text → Chunk (800/150) → Embed (BM25 
 | ----------------------- | ----------------------------------------------------------------------------------- |
 | Index Rebuild           | `python manage.py rebuild_indexes` — re-processes all documents with new embeddings |
 | Dry Run                 | `--dry-run` flag to preview what would change                                       |
-| Health Endpoint         | `GET /api/health/` — Django, Ollama, FAISS, Cache status                            |
+| Health Endpoint         | `GET /api/health/` — Django, Groq API, FAISS, Cache status                            |
 | Cache Auto-invalidation | Adding/removing documents automatically clears relevant cache entries               |
 
 ---
@@ -242,7 +242,7 @@ flowchart TD
     end
 
     subgraph LLM
-        OLLAMA[Ollama / Mistral - temp=0.3, ctx=2048]
+        OLLAMA[Groq API - llama-3.1-8b-instant]
     end
 
     subgraph Storage
@@ -290,7 +290,7 @@ flowchart TD
 | SQLite (not PostgreSQL)                       | ~0 overhead vs. Postgres server     |
 | Numpy-only embeddings                         | ~50 MB vs. ~500 MB for transformers |
 
-**Estimated total RAM usage**: ~3-4 GB (Ollama model) + ~200 MB (Django + FAISS) = **~4 GB total**
+**Estimated total RAM usage**: ~200 MB (Django + FAISS, LLM runs via Groq API) = **~200 MB total**
 
 ---
 
@@ -302,7 +302,7 @@ flowchart TD
 | `ai/cache.py`                               | LRU cache with TTL (NEW)                     |
 | `ai/vector.py`                              | FAISS vector store (REWRITTEN)               |
 | `ai/rag.py`                                 | RAG pipeline with memory (REWRITTEN)         |
-| `ai/llm.py`                                 | Ollama service with tuned params (REWRITTEN) |
+| `ai/llm.py`                                 | Groq API service with tuned params (REWRITTEN) |
 | `ai/views.py`                               | Health check + cache stats (UPDATED)         |
 | `ai/management/commands/rebuild_indexes.py` | Index rebuild command (NEW)                  |
 | `documents/services.py`                     | PDF processing + chunking (REWRITTEN)        |

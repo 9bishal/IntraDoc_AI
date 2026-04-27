@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class OllamaError(Exception):
+class LLMError(Exception):
     """Custom exception for LLM-related errors."""
     pass
 
@@ -56,7 +56,7 @@ def generate_response(messages, model=None, timeout=None):
         generator: Yields response text chunks
 
     Raises:
-        OllamaError: If connection fails, times out, or returns an error
+        LLMError: If connection fails, times out, or returns an error
     """
     config = get_llm_config()
     model = model or config['model']
@@ -64,7 +64,7 @@ def generate_response(messages, model=None, timeout=None):
 
     # Validate API key
     if not config['api_key']:
-        raise OllamaError(
+        raise LLMError(
             "GROQ_API_KEY environment variable is not set. "
             "Please configure your Groq API key in .env file."
         )
@@ -94,7 +94,7 @@ def generate_response(messages, model=None, timeout=None):
                 error_detail = error_data.get('error', {}).get('message', response.text)
             except:
                 pass
-            raise OllamaError(
+            raise LLMError(
                 f"Groq API error: {response.status_code} - {error_detail}"
             )
 
@@ -102,33 +102,33 @@ def generate_response(messages, model=None, timeout=None):
         choices = data.get('choices', [])
         
         if not choices:
-            raise OllamaError("Groq API returned no response choices")
+            raise LLMError("Groq API returned no response choices")
         
         message = choices[0].get('message', {})
         response_text = message.get('content', '')
 
         if not response_text:
-            raise OllamaError("Groq API returned an empty response")
+            raise LLMError("Groq API returned an empty response")
 
         # Yield the response as a generator to match streaming interface
         yield response_text
 
-    except OllamaError:
-        # Re-raise OllamaError to be caught by RAG pipeline
+    except LLMError:
+        # Re-raise LLMError to be caught by RAG pipeline
         raise
     except requests.exceptions.ConnectionError as e:
-        raise OllamaError(
+        raise LLMError(
             f"Cannot connect to Groq API. Check your internet connection and API key."
         )
     except requests.exceptions.Timeout as e:
-        raise OllamaError(
+        raise LLMError(
             f"Groq API request timed out after {timeout}s. "
             f"Try increasing LLM_TIMEOUT env variable."
         )
     except requests.exceptions.RequestException as e:
-        raise OllamaError(f"Groq API request failed: {str(e)}")
+        raise LLMError(f"Groq API request failed: {str(e)}")
     except ValueError as e:
-        raise OllamaError(f"Failed to parse Groq API response: {str(e)}")
+        raise LLMError(f"Failed to parse Groq API response: {str(e)}")
 
 
 def check_ollama_health():

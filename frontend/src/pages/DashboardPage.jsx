@@ -85,7 +85,12 @@ export default function DashboardPage() {
       ] : [];
       const timelineData = Object.entries(timelineMap).map(([date, count]) => ({ date, count })).reverse();
       const gaps = logs
-        .filter(log => log.event_name === 'document_query' && (log.response_preview?.includes('Not available') || log.response_preview?.includes('not available')))
+        .filter(log => log.event_name === 'document_query' && (
+          log.response_preview?.includes('Not available') || 
+          log.response_preview?.includes('not available') ||
+          log.response_preview?.includes("don't have enough information") ||
+          log.response_preview?.includes('No relevant evidence found')
+        ))
         .slice(0, 5)
         .map(log => ({ query: log.query_text, dept: log.department }));
 

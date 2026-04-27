@@ -36,7 +36,7 @@
 | **RBAC** | 5 roles (ADMIN, HR, ACCOUNTS, LEGAL, FINANCE) with role-based access |
 | **Document Upload** | Upload PDFs, automatically indexed in FAISS |
 | **Semantic Search** | Find relevant content using embeddings (Sentence-Transformers) |
-| **RAG Pipeline** | Retrieve context + generate answers using Groq LLM API |
+| **RAG Pipeline** | Retrieve context + generate answers using Grok LLM API |
 | **Chat History** | Store and retrieve conversation logs |
 | **Streaming Response** | Real-time chat responses with JSON-Line format |
 | **Query Sharing** | Shareable links for department-specific queries |
@@ -643,7 +643,7 @@ RATELIMIT_UPLOADS_PER_HOUR = 20
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | **FAISS not found** | Embeddings not generated | Run `python manage.py rebuild_indexes` |
-| **LLM timeout** | Groq API slow | Increase `LLM_TIMEOUT` in .env |
+| **LLM timeout** | Grok API slow | Increase `LLM_TIMEOUT` in .env |
 | **No results** | No documents uploaded | Upload PDFs via `/api/documents/upload/` |
 | **Access denied** | RBAC blocking request | Check user role and department |
 | **Slow search** | Large FAISS index | Partition by department or date |

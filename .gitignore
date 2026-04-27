@@ -18,8 +18,7 @@ media/
 staticfiles/
 
 # FAISS indexes
-faiss_indexes/*.index
-faiss_indexes/*.json
+faiss_indexes/
 
 # IDE
 .vscode/
