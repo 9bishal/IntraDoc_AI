@@ -650,11 +650,9 @@ RATELIMIT_UPLOADS_PER_HOUR = 20
 
 ---
 
-## Support & Contribution
+## Support & Documentation
 
-For issues, questions, or contributions:
-- **GitHub Issues**: [Report bug]
-- **Email**: support@intradoc-ai.com
+For further information:
 - **Documentation**: See `/docs/` folder
 
 ---
