@@ -72,12 +72,12 @@
 ## 4. RAG Pipeline & Prompt Engineering
 
 | Aspect                   | Before                        | After                                                                      |
-| ------------------------ | ----------------------------- | -------------------------------------------------------------------------- | ----------------- |
+| ------------------------ | ----------------------------- | -------------------------------------------------------------------------- |
 | Conversation Memory      | None — each query independent | Last 3 turns of chat history included in prompt                            |
 | Query Expansion          | None                          | Follow-up detection + automatic context expansion                          |
 | Prompt Structure         | Simple "Context + Question"   | Structured system prompt with role awareness, strict rules, memory section |
 | Role Awareness           | Not in prompt                 | User's access level explicitly stated in prompt                            |
-| Chunk Metadata in Prompt | `[Document N - DEPT]`         | `[Document N — DEPT                                                        | Relevance: 0.XX]` |
+| Chunk Metadata in Prompt | `[Document N - DEPT]`         | `[Document N — DEPT \| Relevance: 0.XX]`                                   |
 
 **Key file:** [rag.py](file:///Users/bishalkumarshah/IntraDoc_AI/ai/rag.py)
 
